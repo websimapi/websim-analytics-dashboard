@@ -79,22 +79,41 @@
       const user = await window.websim.getCreatedBy();
       if (!user) return null;
       
-      const stats = await fetch(`/api/v1/users/${user.username}/stats`)
-        .then(r => r.json());
+      try {
+        // Fetch stats and sites in parallel
+        const [statsResponse, sitesResponse] = await Promise.all([
+          fetch(`/api/v1/users/${user.username}/stats`),
+          fetch(`/api/v1/users/${user.username}/sites?first=100`)
+        ]);
 
-      const sitesResponse = await fetch(`/api/v1/users/${user.username}/sites?first=100`)
-        .then(r => r.json());
+        if (!statsResponse.ok || !sitesResponse.ok) {
+          throw new Error('Failed to fetch analytics data');
+        }
 
-      const totalSites = sitesResponse.sites.data.length;
-      
-      return {
-        stats: stats.stats,
-        totalSites,
-        user
-      };
+        const stats = await statsResponse.json();
+        const sites = await sitesResponse.json();
+
+        // Validate response structure
+        if (!stats?.stats || !sites?.sites?.data) {
+          throw new Error('Invalid response format');
+        }
+
+        const totalSites = sites.sites.data.length;
+
+        return {
+          stats: stats.stats,
+          totalSites,
+          user
+        };
+      } catch (err) {
+        console.error('Error fetching analytics:', err);
+        throw new Error('Failed to load analytics data');
+      }
     }
 
     function formatNumber(num) {
+      if (!Number.isFinite(num)) return '0';
+      
       if (num >= 1000000) {
         return (num / 1000000).toFixed(1) + 'M';
       }
@@ -106,6 +125,19 @@
 
     function generateMarkdown(data) {
       const {stats, totalSites, user} = data;
+
+      // Calculate metrics safely
+      const engagementRate = stats.total_views > 0 
+        ? ((stats.total_likes / stats.total_views) * 100).toFixed(1) 
+        : '0.0';
+
+      const avgViews = totalSites > 0
+        ? Math.round(stats.total_views / totalSites)
+        : 0;
+
+      const avgLikes = totalSites > 0
+        ? Math.round(stats.total_likes / totalSites)
+        : 0;
       
       return `
         <h1>📊 Analytics Overview for @${user.username}</h1>
@@ -133,9 +165,9 @@
         <hr>
 
         <p>
-          🎯 <strong>Engagement Rate:</strong> ${((stats.total_likes / stats.total_views) * 100).toFixed(1)}%<br>
-          📈 <strong>Average Views per Site:</strong> ${formatNumber(Math.round(stats.total_views / totalSites))}<br>
-          💫 <strong>Average Likes per Site:</strong> ${formatNumber(Math.round(stats.total_likes / totalSites))}
+          🎯 <strong>Engagement Rate:</strong> ${engagementRate}%<br>
+          📈 <strong>Average Views per Site:</strong> ${formatNumber(avgViews)}<br>
+          💫 <strong>Average Likes per Site:</strong> ${formatNumber(avgLikes)}
         </p>
 
         <hr>
@@ -161,10 +193,10 @@
         
         document.getElementById('content').innerHTML = generateMarkdown(data);
       } catch (err) {
-        console.error(err);
+        console.error('Error in init:', err);
         document.getElementById('content').innerHTML = `
           <p style="text-align: center; color: #dc2626;">
-            Error loading analytics. Please try again later.
+            ${err.message || 'Error loading analytics. Please try again later.'}
           </p>
         `;
       }
