@@ -1,9 +1,4 @@
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Analytics Dashboard</title>
-  <style>
+<html><head><base href="/" /><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Analytics Dashboard</title><style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
       line-height: 1.6;
@@ -67,9 +62,7 @@
       padding: 2rem;
       color: #6b7280;
     }
-  </style>
-</head>
-<body>
+  </style></head><body>
   <div class="markdown" id="content">
     <div class="loading">Loading analytics...</div>
   </div>
@@ -77,37 +70,36 @@
   <script type="module">
     async function fetchAnalytics() {
       const user = await window.websim.getCreatedBy();
-      if (!user) return null;
+      if (!user?.username) {
+        throw new Error('User not found');
+      }
       
       try {
-        // Fetch stats and sites in parallel
-        const [statsResponse, sitesResponse] = await Promise.all([
-          fetch(`/api/v1/users/${user.username}/stats`),
-          fetch(`/api/v1/users/${user.username}/sites?first=100`)
-        ]);
-
-        if (!statsResponse.ok || !sitesResponse.ok) {
-          throw new Error('Failed to fetch analytics data');
+        const statsResponse = await fetch(`/api/v1/users/${user.username}/stats`);
+        if (!statsResponse.ok) {
+          throw new Error(`Stats request failed: ${statsResponse.status}`);
+        }
+        
+        const sitesResponse = await fetch(`/api/v1/users/${user.username}/sites?state=done&first=100`);
+        if (!sitesResponse.ok) {
+          throw new Error(`Sites request failed: ${sitesResponse.status}`);
         }
 
         const stats = await statsResponse.json();
         const sites = await sitesResponse.json();
 
-        // Validate response structure
         if (!stats?.stats || !sites?.sites?.data) {
-          throw new Error('Invalid response format');
+          throw new Error('Invalid API response format');
         }
-
-        const totalSites = sites.sites.data.length;
 
         return {
           stats: stats.stats,
-          totalSites,
+          totalSites: sites.sites.data.length,
           user
         };
       } catch (err) {
-        console.error('Error fetching analytics:', err);
-        throw new Error('Failed to load analytics data');
+        console.error('Analytics fetch error:', err);
+        throw err; // Re-throw to be handled by caller
       }
     }
 
@@ -126,7 +118,6 @@
     function generateMarkdown(data) {
       const {stats, totalSites, user} = data;
 
-      // Calculate metrics safely
       const engagementRate = stats.total_views > 0 
         ? ((stats.total_likes / stats.total_views) * 100).toFixed(1) 
         : '0.0';
@@ -135,10 +126,10 @@
         ? Math.round(stats.total_views / totalSites)
         : 0;
 
-      const avgLikes = totalSites > 0
+      const avgLikes = totalSites > 0  
         ? Math.round(stats.total_likes / totalSites)
         : 0;
-      
+
       return `
         <h1>📊 Analytics Overview for @${user.username}</h1>
 
@@ -180,10 +171,12 @@
     }
 
     async function init() {
+      const contentEl = document.getElementById('content');
+      
       try {
         const data = await fetchAnalytics();
         if (!data) {
-          document.getElementById('content').innerHTML = `
+          contentEl.innerHTML = `
             <p style="text-align: center; color: #666;">
               Please sign in to view analytics
             </p>
@@ -191,19 +184,19 @@
           return;
         }
         
-        document.getElementById('content').innerHTML = generateMarkdown(data);
+        contentEl.innerHTML = generateMarkdown(data);
       } catch (err) {
-        console.error('Error in init:', err);
-        document.getElementById('content').innerHTML = `
+        console.error('Analytics error:', err);
+        contentEl.innerHTML = `
           <p style="text-align: center; color: #dc2626;">
-            ${err.message || 'Error loading analytics. Please try again later.'}
+            Unable to load analytics: ${err.message}
           </p>
         `;
       }
     }
 
+    // Start the app
     init();
   </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-</body>
-</html>
+</body></html>
